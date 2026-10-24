@@ -248,7 +248,11 @@ async function checkRedisRateLimit(
   };
 }
 
-/** Check a rate limit using shared Redis in production and memory in development/tests. */
+/**
+ * Check a rate limit using shared Redis when REDIS_URL is configured, and
+ * fall back to per-process memory otherwise (including production, so the
+ * app stays usable without Redis — limits are then per serverless instance).
+ */
 export async function checkRateLimit(
   identifier: string,
   config: RateLimitConfig
@@ -257,13 +261,9 @@ export async function checkRateLimit(
     return checkRedisRateLimit(identifier, config);
   }
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("REDIS_URL is required for shared rate limiting.");
-  }
-
   if (process.env.NODE_ENV !== "test" && !warnedAboutMemoryFallback) {
     console.warn(
-      "REDIS_URL is not configured; API rate limits are local to this server process."
+      "REDIS_URL is not configured; API rate limits are local to this server process. Set REDIS_URL for shared rate limiting."
     );
     warnedAboutMemoryFallback = true;
   }

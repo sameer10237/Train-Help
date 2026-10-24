@@ -178,27 +178,25 @@ describe("Rate Limiting Engine", () => {
     expect(console.error).toHaveBeenCalledOnce();
   });
 
-  it("fails closed with 503 when production Redis protection is not configured", async () => {
+  it("falls back to in-memory limiting in production when Redis is not configured", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("REDIS_URL", "");
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const guard = await enforceRateLimit(
-      new NextRequest("http://localhost/api/test"),
-      {
-        maxRequests: 1,
-        windowMs: 1_000,
-        name: "test-production-config",
-      }
-    );
+    const config: RateLimitConfig = {
+      maxRequests: 1,
+      windowMs: 1_000,
+      name: "test-production-config",
+    };
+    const request = new NextRequest("http://localhost/api/test");
 
-    expect(guard.success).toBe(false);
-    if (guard.success) throw new Error("Expected rate limiting to fail closed.");
-    expect(guard.response.status).toBe(503);
-    expect(guard.response.headers.get("Retry-After")).toBe("30");
-    await expect(guard.response.json()).resolves.toMatchObject({
-      isError: true,
-    });
-    expect(console.error).toHaveBeenCalledOnce();
+    const first = await enforceRateLimit(request, config);
+    expect(first.success).toBe(true);
+    expect(redisMocks.createClient).not.toHaveBeenCalled();
+
+    const second = await enforceRateLimit(request, config);
+    expect(second.success).toBe(false);
+    if (second.success) throw new Error("Expected second request to be limited.");
+    expect(second.response.status).toBe(429);
   });
 });
